@@ -1,0 +1,22 @@
+# Save as .github/workflows/tally-pr.yml, and put tally-cli.mjs at .github/tally-cli.mjs.
+# Posts (and then updates) one comment on every pull request showing the change in lines of code.
+name: Tally
+on: pull_request
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  tally:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check out the base branch
+        run: git worktree add ../base ${{ github.event.pull_request.base.sha }}
+      - name: Count lines
+        run: node .github/tally-cli.mjs . --diff ../base --markdown > tally.md
+      - name: Comment on the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment ${{ github.event.pull_request.number }} --edit-last --create-if-none --body-file tally.md
