@@ -1,14 +1,14 @@
-// Run with: node --test
-import test from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-const cli = path.join(path.dirname(new URL(import.meta.url).pathname), "tally-cli.mjs");
-const run = (...a) => execFileSync("node", [cli, ...a], { encoding: "utf8" });
-const make = files => {
+const cli = fileURLToPath(new URL("../cli/tally-cli.ts", import.meta.url));
+const run = (...a: string[]) => execFileSync(process.execPath, ["--import", "tsx", cli, ...a], { encoding: "utf8" });
+const make = (files: Record<string, string>) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tally-test-"));
   for (const [p, t] of Object.entries(files)) { fs.mkdirSync(path.dirname(path.join(dir, p)), { recursive: true }); fs.writeFileSync(path.join(dir, p), t); }
   return dir;
@@ -29,7 +29,7 @@ test("counts Python docstrings as comments", () => {
 test("skips vendored folders, lock files, .gitignore matches and generated files", () => {
   const dir = make({ "src/a.js": "x\n", "node_modules/b.js": "x\n", "package-lock.json": "{}\n", ".gitignore": "*.log\n", "a.log": "x\n", "gen.js": "// @generated\nx\n" });
   const r = JSON.parse(run(dir, "--json"));
-  assert.equal(r.languages.find(g => g.name === "JavaScript").files, 1);
+  assert.equal(r.languages.find((g: { name: string }) => g.name === "JavaScript").files, 1);
   assert.ok(r.skipped >= 4);
 });
 

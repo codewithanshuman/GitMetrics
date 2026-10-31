@@ -1,6 +1,6 @@
-# Save as .github/workflows/tally-pr.yml, and put tally-cli.mjs at .github/tally-cli.mjs.
+# Save as .github/workflows/tally-pr.yml.
 # Posts (and then updates) one comment on every pull request showing the change in lines of code.
-name: Tally
+name: GitMetrics
 on: pull_request
 permissions:
   contents: read
@@ -14,8 +14,10 @@ jobs:
           fetch-depth: 0
       - name: Check out the base branch
         run: git worktree add ../base ${{ github.event.pull_request.base.sha }}
+      - name: Get the GitMetrics CLI
+        run: git clone --depth 1 https://github.com/codewithanshuman/GitMetrics.git ../gitmetrics && npm ci --prefix ../gitmetrics
       - name: Count lines
-        run: node .github/tally-cli.mjs . --diff ../base --markdown > tally.md
+        run: ../gitmetrics/node_modules/.bin/tsx ../gitmetrics/cli/tally-cli.ts . --diff ../base --markdown > tally.md
       - name: Comment on the pull request
         env:
           GH_TOKEN: ${{ github.token }}
