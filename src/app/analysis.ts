@@ -63,11 +63,13 @@ export function parseRepo(v: string): RepoSpec | null {
 
 export type Route =
   | { kind: "home" } | { kind: "repo"; spec: RepoSpec; tab: string } | { kind: "vs"; list: string[] } | { kind: "user"; user: string }
-  | { kind: "pr"; o: string; n: string; num: string } | { kind: "local" };
+  | { kind: "pr"; o: string; n: string; num: string } | { kind: "local" } | { kind: "arena" } | { kind: "player"; login: string };
 
 export function readHash(): Route {
   const h = decodeURIComponent(location.hash.slice(1));
   if (!h) return { kind: "home" };
+  if (h === "arena") return { kind: "arena" };
+  if (h.startsWith("player/")) return { kind: "player", login: h.slice(7) };
   if (h.startsWith("pr/")) { const [o, n, num] = h.slice(3).split("/"); return { kind: "pr", o, n, num }; }
   if (h.startsWith("vs/")) return { kind: "vs", list: h.slice(3).split("+") };
   if (h.startsWith("@")) return { kind: "user", user: h.slice(1) };

@@ -12,6 +12,7 @@
     "cli": "tsx cli/tally-cli.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
     "@tanstack/react-virtual": "^3.10.8",
     "cmdk": "^1.0.4",
     "jszip": "^3.10.1",

@@ -1,6 +1,6 @@
 # GitMetrics
 
-Repository intelligence that runs entirely in your browser. Give it a GitHub repo, a pull request, a user, or a local folder, and it reports what's inside and how healthy it is. There is no server and no sign-in.
+Repository intelligence that runs in your browser. Give it a GitHub repo, a pull request, a user, or a local folder, and it reports what's inside and how healthy it is. Analysis needs no server and no sign-in. An optional global leaderboard lets developers sign in with GitHub and compete.
 
 Built with React, TypeScript and Vite. Counting runs in a Web Worker, so large repositories don't freeze the page.
 
@@ -19,6 +19,9 @@ Built with React, TypeScript and Vite. Counting runs in a Web Worker, so large r
 - **Pull request review:** paste a PR link for a risk score and review notes.
 - **Flow and people:** merge and close times, backlog age, bus factor and per-author history.
 - **Compare and profiles:** put up to four repos side by side, or view a whole user or organization.
+- **Repository leaderboard:** every report ranks its authors by XP, lines written, commits, recent activity and net lines, with a podium, levels and badges.
+- **Global leaderboard:** sign in with GitHub to get a level, XP and 13 badges from a year of real activity, and rank against everyone by XP, lines written, commits, this week, streak or stars. Scores are computed on a server, so they can't be faked. See [LEADERBOARD.md](LEADERBOARD.md) to set it up.
+- **Player cards:** each player has a page with badges, head-to-head comparison and a shareable SVG card.
 - **Watchlist:** follow repositories and see their health over time. This stays in your browser.
 - **Exports:** PDF, share image, README card, Markdown, JSON, CSV, cloc-style CSV and SVG badges.
 
@@ -85,4 +88,5 @@ npm run build
 | `src/pages/` | Screens and report sections |
 | `src/ui/` | Charts and shared components |
 | `cli/` | Command line tool, which shares `src/core` |
+| `supabase/` | Leaderboard database schema, scoring function and shared scoring rules |
 | `tests/` | Vitest suite |

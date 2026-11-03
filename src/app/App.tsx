@@ -14,10 +14,46 @@ import { ComparePage } from "../pages/ComparePage";
 import { ProfilePage } from "../pages/ProfilePage";
 import { PrPage } from "../pages/PrPage";
 import { Loading, Failure, useSteps } from "../pages/Loading";
+import { ArenaPage, Level, PlayerPage } from "../pages/ArenaPage";
+import { leaveBoard, playerById, signIn, signOut, supabase, syncScore, type PlayerRow, type Session } from "../lib/supabase";
+import { PixelIcon } from "../ui/parts";
+
+export interface Auth { configured: boolean; session: Session | null; me: PlayerRow | null; syncing: boolean; error: string; signIn: () => void; signOut: () => void; sync: (force?: boolean) => void; leave: () => void }
+const DAY = 864e5;
+// keeps the signed-in player's row fresh. GitHub only hands over its token right after sign-in, so that's when scoring runs.
+function useAuth(): Auth {
+  const [session, setSession] = useState<Session | null>(null), [me, setMe] = useState<PlayerRow | null>(null), [syncing, setSyncing] = useState(false), [error, setError] = useState("");
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data } = supabase.auth.onAuthStateChange((_, s) => setSession(s));
+    if (new URLSearchParams(location.search).has("code")) history.replaceState(null, "", location.pathname + location.hash);
+    return () => data.subscription.unsubscribe();
+  }, []);
+  const sync = useCallback(async (force = false) => {
+    const token = session?.provider_token;
+    if (!token) { setError("GitHub only shares activity right after sign-in. Sign in again to update your score."); return; }
+    setSyncing(true); setError("");
+    try { setMe(await syncScore(token, force)); } catch (e) { setError((e as Error).message); } finally { setSyncing(false); }
+  }, [session]);
+  useEffect(() => {
+    if (!session) { setMe(null); return; }
+    playerById(session.user.id).then(row => {
+      setMe(row);
+      if ((!row || Date.now() - new Date(row.updated_at).getTime() > DAY) && session.provider_token) sync();
+    });
+  }, [session?.user.id]);
+  return {
+    configured: !!supabase, session, me, syncing, error, sync,
+    signIn: () => { signIn(location.hash || "#arena"); },
+    signOut: () => { signOut(); setMe(null); },
+    leave: () => { if (me) leaveBoard(me.id).then(() => setMe(null), e => setError(e.message)); }
+  };
+}
 
 interface Ctx {
   token: string; vendor: boolean; go: (input: string) => void; home: () => void; openSettings: () => void;
-  setCurrent: (d: Report | null) => void; setTab: (t: string) => void; analyzeLocal: (job: LocalJob) => void; theme: string; toggleTheme: () => void;
+  auth: Auth; setCurrent: (d: Report | null) => void; setTab: (t: string) => void; analyzeLocal: (job: LocalJob) => void; theme: string; toggleTheme: () => void;
 }
 export type LocalJob = { kind: "zip"; file: File; name: string } | { kind: "files"; files: { path: string; file: File }[]; name: string };
 const AppCtx = createContext<Ctx>(null!);
@@ -68,7 +104,7 @@ function Palette({ open, setOpen, current }: { open: boolean; setOpen: (o: boole
       {recents().length > 0 && <Command.Group heading="Recent">{recents().map(r => <Command.Item key={r.name} value={"recent " + r.name} onSelect={() => run(() => go(r.name))}>{r.name}</Command.Item>)}</Command.Group>}
       {current && <Command.Group heading="Report">{TABS.filter(([k]) => !current.local || ["overview", "code", "arch", "risk"].includes(k)).map(([k, l]) => <Command.Item key={k} value={"go to " + l} onSelect={() => run(() => setTab(k))}>{l}</Command.Item>)}
         {S && <><Command.Item value="copy markdown report" onSelect={() => run(() => navigator.clipboard.writeText(mdReport(current, S)))}>Copy Markdown report</Command.Item><Command.Item value="download share image" onSelect={() => run(() => exportAs("png", current, S))}>Download share image</Command.Item></>}</Command.Group>}
-      <Command.Group heading="App"><Command.Item value="go home start" onSelect={() => run(home)}>Go to start</Command.Item><Command.Item value="switch theme dark light" onSelect={() => run(toggleTheme)}>Switch theme</Command.Item><Command.Item value="open settings token" onSelect={() => run(openSettings)}>Open settings</Command.Item></Command.Group>
+      <Command.Group heading="App"><Command.Item value="go home start" onSelect={() => run(home)}>Go to start</Command.Item><Command.Item value="leaderboard arena ranking" onSelect={() => run(() => { location.hash = "arena"; })}>Open the leaderboard</Command.Item><Command.Item value="switch theme dark light" onSelect={() => run(toggleTheme)}>Switch theme</Command.Item><Command.Item value="open settings token" onSelect={() => run(openSettings)}>Open settings</Command.Item></Command.Group>
     </Command.List>
   </Command.Dialog>;
 }
@@ -79,7 +115,7 @@ export function App() {
   const [current, setCurrent] = useState<Report | null>(null), [file, setFile] = useState<string | null>(null), [, bump] = useState(0);
   const [local, setLocal] = useState<Report | null>(null), [localJob, setLocalJob] = useState<LocalJob | null>(null), [localError, setLocalError] = useState("");
   const tabSetter = useRef<(t: string) => void>(() => {});
-  const { steps, step, reset } = useSteps();
+  const { steps, step, reset } = useSteps(), auth = useAuth();
 
   useEffect(() => { document.documentElement.dataset.theme = theme; store.set("gm.theme", theme); }, [theme]);
   useEffect(() => { rate.onChange = () => bump(x => x + 1); return () => { rate.onChange = null; }; }, []);
@@ -106,13 +142,17 @@ export function App() {
       .catch(e => { setLocalError(e.message || "Those files couldn’t be read."); setLocalJob(null); });
   }, [reset, step]);
 
+  // a signed-in player’s GitHub token also lifts the API limit from 60 to 5,000 requests an hour
+  const apiToken = token || auth.session?.provider_token || "";
   const ctx: Ctx = useMemo(() => ({
-    token, vendor, go, home, openSettings: () => setSettings(true), setCurrent, setTab: t => tabSetter.current(t), analyzeLocal, theme, toggleTheme: () => setTheme(t => t === "dark" ? "light" : "dark")
-  }), [token, vendor, go, home, analyzeLocal, theme]);
+    auth, token: apiToken, vendor, go, home, openSettings: () => setSettings(true), setCurrent, setTab: t => tabSetter.current(t), analyzeLocal, theme, toggleTheme: () => setTheme(t => t === "dark" ? "light" : "dark")
+  }), [auth, apiToken, vendor, go, home, analyzeLocal, theme]);
 
-  const pageKey = route.kind === "repo" ? `repo:${route.spec.o}/${route.spec.n}@${route.spec.ref}` : route.kind === "vs" ? "vs:" + route.list.join() : route.kind === "user" ? "u:" + route.user : route.kind === "pr" ? `pr:${route.o}/${route.n}/${route.num}` : route.kind;
+  const pageKey = route.kind === "repo" ? `repo:${route.spec.o}/${route.spec.n}@${route.spec.ref}` : route.kind === "vs" ? "vs:" + route.list.join() : route.kind === "user" ? "u:" + route.user : route.kind === "player" ? "p:" + route.login : route.kind === "pr" ? `pr:${route.o}/${route.n}/${route.num}` : route.kind;
   let page: ReactNode;
-  if (route.kind === "repo") page = <RepoPage spec={route.spec} initialTab={route.tab} tabRef={tabSetter} />;
+  if (route.kind === "arena") page = <ArenaPage />;
+  else if (route.kind === "player") page = <PlayerPage login={route.login} />;
+  else if (route.kind === "repo") page = <RepoPage spec={route.spec} initialTab={route.tab} tabRef={tabSetter} />;
   else if (route.kind === "vs") page = <ComparePage list={route.list} />;
   else if (route.kind === "user") page = <ProfilePage user={route.user} />;
   else if (route.kind === "pr") page = <PrPage o={route.o} n={route.n} num={route.num} />;
@@ -128,6 +168,9 @@ export function App() {
         <span>Analyze a repo or run a command</span><kbd>Ctrl K</kbd>
       </button>
       {rate.remaining != null && <div className={"quota" + (low ? " low" : "")} title={`GitHub API requests left this hour: ${rate.remaining} of ${rate.limit}`}><i><b style={{ width: `${rate.remaining / (rate.limit || 60) * 100}%` }} /></i><span>API {fmt(rate.remaining)}/{fmt(rate.limit)}</span></div>}
+      <a className={"btn sm trophy" + (route.kind === "arena" ? " on" : "")} href="#arena" aria-label="Leaderboard"><PixelIcon name="trophy" size={18} /><span>Leaderboard</span></a>
+      {auth.configured && (auth.me ? <a className="me" href={`#player/${auth.me.login}`} title={`${auth.me.login}, level ${auth.me.level}`}><img src={auth.me.avatar} alt="" width="26" height="26" /><Level level={auth.me.level} small /></a>
+        : auth.session ? <button className="btn sm" onClick={auth.signOut}>Sign out</button> : <button className="btn sm pri" onClick={auth.signIn}>Sign in</button>)}
       <button className="icon" onClick={ctx.toggleTheme} aria-label="Switch theme"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><circle cx="9" cy="9" r="7" /><path d="M9 2a7 7 0 0 1 0 14z" fill="currentColor" /></svg></button>
       <button className="icon" onClick={() => setSettings(true)} aria-label="Settings"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true"><path d="M3 5h7M14 5h1M3 13h1M8 13h7" /><circle cx="12" cy="5" r="2" /><circle cx="6" cy="13" r="2" /></svg></button>
     </header>
